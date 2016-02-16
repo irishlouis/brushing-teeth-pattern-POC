@@ -1,4 +1,8 @@
-setwd("U:\Actigraphy Raw Data (Marie McCarthy)\brushing teeth")
+setwd("U:/Actigraphy Raw Data (Marie McCarthy)/brushing teeth")
+
+load("brushing summary data.RDATA")
+
+#################################################################
 
 require(data.table)
 df <- fread("TAS1E35150309 (2016-01-21)RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
@@ -34,7 +38,8 @@ summary(df)
 
 require(dplyr)
 
-df <- df %>% mutate(vector.mag = sqrt(AccelerometerX^2+ AccelerometerY^2+ AccelerometerZ^2))
+df <- df %>% mutate(vector.mag = sqrt(AccelerometerX^2+ AccelerometerY^2+ AccelerometerZ^2),
+                    time_minute = floor_date(Timestamp, "minute"))
 
 require(ggplot2)
 require(gridExtra)
@@ -88,12 +93,11 @@ plot.data(df %>%
             filter(Timestamp > dmy_hms("20/01/2016 214530", tz = "GMT") & 
                      Timestamp < dmy_hms("20/01/2016 214600", tz = "GMT") ))
 
-
 require(zoo)
 summ.df.mean <- function(d) {
   splits <- rollapply(1:nrow(d), 6000, function(x) x )
   splits <- as.data.frame(splits)
-  d <- d %>% select( -Timestamp, -vector.dir)
+  d <- d %>% select( -Timestamp, -time_minute, -vector.dir)
   tmp <- apply(splits, 1, function(x) {apply(d[x, ], 2, summary)})
   tmp <- as.data.frame(tmp)
   return(matrix(apply(tmp, 1, mean), 
@@ -105,7 +109,7 @@ summ.df.mean <- function(d) {
 summ.df.sd <- function(d) {
   splits <- rollapply(1:nrow(d), 6000, function(x) x  )
   splits <- as.data.frame(splits)
-  d <- d %>% select( -Timestamp, -vector.dir)
+  d <- d %>% select( -Timestamp, -time_minute, -vector.dir)
   tmp <- apply(splits, 1, function(x) {apply(d[x, ], 2, summary)})
   tmp <- as.data.frame(tmp)
   return(matrix(apply(tmp, 1, sd), 
@@ -121,11 +125,16 @@ brushing.summary
 brushing.summary.dir <- lapply(list(df1, df2, df3, df4), function(x) round(table(x$vector.dir)/nrow(x), 2))
 brushing.summary.dir
 
-brushing.fingerprint <- data.frame( (brushing.summary[[1]] + brushing.summary[[2]]+ brushing.summary[[3]] +brushing.summary[[4]]) / 4)
+brushing.fingerprint <- data.frame( (brushing.summary[[1]] + 
+                                       brushing.summary[[2]]+ 
+                                       brushing.summary[[3]] +
+                                       brushing.summary[[4]]) / 4)
 
 brushing.fingerprint.sd <- lapply(list(df1, df2, df3, df4), summ.df.sd)
-brushing.fingerprint.sd <- data.frame( (brushing.fingerprint.sd[[1]] + brushing.fingerprint.sd[[2]]+ 
-                                          brushing.fingerprint.sd[[3]] + brushing.fingerprint.sd[[4]]) / 4)
+brushing.fingerprint.sd <- data.frame( (brushing.fingerprint.sd[[1]] + 
+                                          brushing.fingerprint.sd[[2]]+ 
+                                          brushing.fingerprint.sd[[3]] + 
+                                          brushing.fingerprint.sd[[4]]) / 4)
 brushing.fingerprint.sd
 
 brushing.fingerprint <- cbind(t(brushing.fingerprint), 
@@ -137,6 +146,41 @@ brushing.fingerprint.sd  <- cbind(t(brushing.fingerprint.sd),
                                sd.dir5 = c(0,0,0, sd(sapply(brushing.summary.dir, function(x) x[5]))))
 
 brushing.fingerprint.sd
+
+# sin wave fingerprint pattern
+get.peak.summary <- function(v, k = 10) {
+  require(zoo)
+  v.smooth <- rollapply(v, k, mean)
+  switch.dir <- sapply(seq_along(v.smooth), function(x) ifelse(x<length(v.smooth), 
+                                                                     v.smooth[x]<v.smooth[x+1], 
+                                                                     F))
+  peaks.per.sec <- sum(sapply(seq_along(v.smooth), function(x) ifelse(x<length(v.smooth), 
+                                                                            switch.dir[x] != switch.dir[x+1], 
+                                                                            F))) / (length(v.smooth)/100)
+  if(peaks.per.sec == 0) return(F)
+  
+  period <- rollapply(which(sapply(seq_along(v.smooth), function(x) ifelse(x<length(v.smooth), 
+                                                                                 switch.dir[x] != switch.dir[x+1], 
+                                                                                 F)) == T),
+                      2, function(x) x[2] - x[1])
+  
+  avg.period <- mean(period)
+  sd.period <- sd(period)
+  return(c(peaks.per.sec = peaks.per.sec, avg.period = avg.period, sd.period = sd.period))
+}
+
+peak.summary <- lapply(list(df1, df2, df3, df4), function(x)
+  (x %>% select(-Timestamp, -vector.dir, -time_minute) %>% apply(.,2, get.peak.summary) %>% t())
+)
+
+peak.summary
+peak.summary.averages <- Reduce('+', peak.summary) / length(peak.summary)
+peak.summary.averages
+
+brushing.fingerprint <- cbind(brushing.fingerprint, peak.summary.averages)
+
+save.image(file = "brushing summary data.RDATA")
+
 ########################################################
 
 test <- df 
@@ -145,7 +189,7 @@ head(test)
 
 require(reshape2)
 
-test.summary <- select(test, -vector.dir) %>%
+test.summary <- select(test, -vector.dir, -time_minute) %>%
   melt(id.vars = "Timestamp") %>%
   mutate(Timestamp = floor_date(Timestamp, "minute")) %>%
   group_by(Timestamp, variable) %>%
@@ -155,7 +199,7 @@ test.summary <- select(test, -vector.dir) %>%
             Mean = mean(value),
             Qu2 = quantile(value, .75),
             Max = max(value)) %>%
-  left_join(select(test, Timestamp, vector.dir) %>% 
+  left_join(select(test, Timestamp, vector.dir, -time_minute) %>% 
               filter(vector.dir == 5) %>%
               mutate(Timestamp = floor_date(Timestamp, "minute")) %>% 
               group_by(Timestamp) %>% summarise(per.vec.dir5 = n()/6000),
@@ -164,6 +208,29 @@ test.summary <- select(test, -vector.dir) %>%
 
 head(test.summary)
 
+times <- unique(test$time_minute)
+
+require(doParallel)
+
+cores <- detectCores()
+cl <- makeCluster(cores)
+registerDoParallel(cl)
+
+system.time(tmp <- foreach(t = 1:length(times), .combine = rbind) %dopar% {
+  require(dplyr)
+  return(test %>% filter(time_minute == times[t]) %>% 
+           select(-Timestamp, -vector.dir, -time_minute) %>% 
+           apply(.,2, get.peak.summary) %>% t() )
+})
+
+stopCluster(cl)
+cbind(as.data.frame(test.summary), as.data.frame(tmp)) %>% head
+
+dim(tmp)
+
+head(test.summary)
+
+####################
 
 similarity <- function(brushing.fingerprint, d){
   return(
@@ -278,6 +345,7 @@ get.peaks <- function(vec.mag, k = 10) {
   avg.period <- mean(period)
   sd.period <- sd(period)
   
+
   mdl <- lm(vec.mag ~ I(sin(pi*2.07*seq_along(vec.mag))))
   p.value <- 1 - pf(summary(mdl)$fstatistic[1], summary(mdl)$fstatistic[2], summary(mdl)$fstatistic[3]) 
   
