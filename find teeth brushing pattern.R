@@ -125,16 +125,10 @@ brushing.summary
 brushing.summary.dir <- lapply(list(df1, df2, df3, df4), function(x) round(table(x$vector.dir)/nrow(x), 2))
 brushing.summary.dir
 
-brushing.fingerprint <- data.frame( (brushing.summary[[1]] + 
-                                       brushing.summary[[2]]+ 
-                                       brushing.summary[[3]] +
-                                       brushing.summary[[4]]) / 4)
-
+brushing.fingerprint <- Reduce('+', brushing.summary) / length(brushing.summary)
+  
 brushing.fingerprint.sd <- lapply(list(df1, df2, df3, df4), summ.df.sd)
-brushing.fingerprint.sd <- data.frame( (brushing.fingerprint.sd[[1]] + 
-                                          brushing.fingerprint.sd[[2]]+ 
-                                          brushing.fingerprint.sd[[3]] + 
-                                          brushing.fingerprint.sd[[4]]) / 4)
+brushing.fingerprint.sd <- Reduce('+', brushing.fingerprint.sd) / length(brushing.fingerprint.sd)
 brushing.fingerprint.sd
 
 brushing.fingerprint <- cbind(t(brushing.fingerprint), 
@@ -144,29 +138,35 @@ brushing.fingerprint
 
 brushing.fingerprint.sd  <- cbind(t(brushing.fingerprint.sd), 
                                sd.dir5 = c(0,0,0, sd(sapply(brushing.summary.dir, function(x) x[5]))))
-
 brushing.fingerprint.sd
 
 # sin wave fingerprint pattern
 get.peak.summary <- function(v, k = 10) {
   require(zoo)
   v.smooth <- rollapply(v, k, mean)
-  switch.dir <- sapply(seq_along(v.smooth), function(x) ifelse(x<length(v.smooth), 
-                                                                     v.smooth[x]<v.smooth[x+1], 
-                                                                     F))
-  peaks.per.sec <- sum(sapply(seq_along(v.smooth), function(x) ifelse(x<length(v.smooth), 
-                                                                            switch.dir[x] != switch.dir[x+1], 
-                                                                            F))) / (length(v.smooth)/100)
+  switch.dir <- sapply(seq_along(v.smooth), 
+                       function(x) ifelse(x<length(v.smooth),
+                                          v.smooth[x]<v.smooth[x+1],
+                                          F))
+  peaks.per.sec <- sum(sapply(seq_along(v.smooth), 
+                              function(x) ifelse(x<length(v.smooth), 
+                                          switch.dir[x] != switch.dir[x+1], 
+                                          F))) / (length(v.smooth)/100)
   if(peaks.per.sec == 0) return(F)
   
-  period <- rollapply(which(sapply(seq_along(v.smooth), function(x) ifelse(x<length(v.smooth), 
-                                                                                 switch.dir[x] != switch.dir[x+1], 
-                                                                                 F)) == T),
+  period <- rollapply(which(sapply(seq_along(v.smooth), 
+                              function(x) ifelse(x<length(v.smooth), 
+                                          switch.dir[x] != switch.dir[x+1], 
+                                          F)) == T),
                       2, function(x) x[2] - x[1])
   
   avg.period <- mean(period)
   sd.period <- sd(period)
-  return(c(peaks.per.sec = peaks.per.sec, avg.period = avg.period, sd.period = sd.period))
+  
+  # mdl <- lm(v ~ I(sin(pi*2.07*seq_along(v))))
+  # pvalue <- 1 - pf(summary(mdl)$fstatistic[1], summary(mdl)$fstatistic[2], summary(mdl)$fstatistic[3])
+  
+  return(c(peaks.per.sec = peaks.per.sec, avg.period = avg.period, sd.period = sd.period)) #, pvalue = pvalue))
 }
 
 peak.summary <- lapply(list(df1, df2, df3, df4), function(x)
@@ -328,78 +328,3 @@ sd(rollapply(which(sapply(seq_along(tmp2), function(x) ifelse(x<length(tmp2), sw
 
 
 ##############################
-
-test$minute <- floor_date(test$Timestamp, "minute")
-
-get.peaks <- function(vec.mag, k = 10) {
-  require(zoo)
-  vec.mag.smooth <- rollapply(vec.mag, k, mean)
-  switch.dir <- sapply(seq_along(vec.mag.smooth), function(x) ifelse(x<length(vec.mag.smooth), 
-                                                                     vec.mag.smooth[x]<vec.mag.smooth[x+1], 
-                                                                     F))
-  peaks.per.sec <- sum(sapply(seq_along(vec.mag.smooth), function(x) ifelse(x<length(vec.mag.smooth), 
-                                                           switch.dir[x] != switch.dir[x+1], 
-                                                           F))) / 60
-  if(peaks.per.sec == 0) return(F)
-  
-  period <- rollapply(which(sapply(seq_along(vec.mag.smooth), function(x) ifelse(x<length(vec.mag.smooth), 
-                                                                       switch.dir[x] != switch.dir[x+1], 
-                                                                       F)) == T),
-                      2, function(x) x[2] - x[1])
-  
-  avg.period <- mean(period)
-  sd.period <- sd(period)
-  
-
-  mdl <- lm(vec.mag ~ I(sin(pi*2.07*seq_along(vec.mag))))
-  p.value <- 1 - pf(summary(mdl)$fstatistic[1], summary(mdl)$fstatistic[2], summary(mdl)$fstatistic[3]) 
-  
-  if(p.value < .000001 & peaks.per.sec > 7 & 
-     peaks.per.sec < 10 &
-     sd.period > 3 &
-     sd.period < 5.7 &
-     avg.period > 11 &
-     avg.period < 17
-     ) return(T) else return(F)
-  }
-
-require(doParallel)
-times <- unique(test$minute)
-cores <- detectCores()
-cl <- makeCluster(cores)
-registerDoParallel(cl)
-
-sim.results2 <- foreach(t = seq_along(times), .combine = c) %dopar% {
-  return(sim = get.peaks(vec.mag = test[test$minute == times[t], "vector.mag"], k = 10))
-}
-
-stopCluster(cl)
-
-data.frame(times, sim.results2) %>% filter(sim.results2)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## fit sin wave
-tmp$row <- 1:499
-mdl <- lm(tmp$vector.mag ~ I(sin(pi*2.07*tmp$row)) + I(cos(pi*2.07*tmp$row)))
-summary(mdl)
-plot(tmp$Timestamp, tmp$vector.mag, type = "l" )
-par(new=T)
-plot(data.frame(Timestamp = tmp$Timestamp,
-                vector.mag=mdl$coefficients[1] + mdl$coefficients[2]*sin(2.07*pi*1:499)), type = "l", col ="red")
-
-plot(data.frame(Timestamp = tmp$Timestamp,
-                vector.mag=mdl$coefficients[1] + mdl$coefficients[2]*sin(2.07*pi*1:499) + mdl$coefficients[3]*cos(2.07*pi*1:499)), type = "l", col ="red")
-
-# need to smooth out curve, to remove minor bumps
