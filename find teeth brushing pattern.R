@@ -212,35 +212,40 @@ times <- unique(test$time_minute)
 
 require(doParallel)
 
-cores <- detectCores()
-cl <- makeCluster(cores)
-registerDoParallel(cl)
+tmp.func <- function(t){
+  print(t)
+  tbl <- test %>% filter(time_minute == t) %>% 
+    select(-Timestamp, -vector.dir, -time_minute) %>% 
+    apply(.,2, get.peak.summary) %>% t() %>% data.frame %>% mutate(Timestamp = t) 
+  if(nrow(tbl) == 4) {
+    return(tbl)
+  } else{
+    return(data.frame(peaks.per.sec = rep(0,4), 
+                      avg.period = rep(0,4), 
+                      sd.period = rep(0,4), 
+                      Timestamp  = rep(t,4)))
+  }
+}
 
-system.time(tmp <- foreach(t = 1:length(times), .combine = rbind) %dopar% {
-  require(dplyr)
-  return(test %>% filter(time_minute == times[t]) %>% 
-           select(-Timestamp, -vector.dir, -time_minute) %>% 
-           apply(.,2, get.peak.summary) %>% t() )
-})
+tmp <- do.call(rbind, lapply(times, tmp.func ))
 
-stopCluster(cl)
-cbind(as.data.frame(test.summary), as.data.frame(tmp)) %>% head
-
-dim(tmp)
+test.summary <- cbind(test.summary, tmp %>% select(-Timestamp)) 
 
 head(test.summary)
 
 ####################
 
+
 similarity <- function(brushing.fingerprint, d){
   return(
-    # sqrt(sum((brushing.fingerprint$Min.-d$min)^2)) +
-    sqrt(sum((brushing.fingerprint$X1st.Qu.-d$Qu1)^2)) +
-    sqrt(sum((brushing.fingerprint$Median-d$Median)^2)) +
-    sqrt(sum((brushing.fingerprint$Mean-d$Mean)^2)) +
-    sqrt(sum((brushing.fingerprint$X3rd.Qu.-d$Qu2)^2)) +
-    # sqrt(sum((brushing.fingerprint$Max.-d$Max)^2)) +
-    sqrt(sum((brushing.fingerprint$mean.dir5[4]-max(d$per.vec.dir5[4], 0, na.rm = T))^2))
+    sqrt(sum(((brushing.fingerprint$Qu1st-d$Qu1)/brushing.fingerprint$Qu1st)^2)) +
+    sqrt(sum(((brushing.fingerprint$Median-d$Median)/brushing.fingerprint$Median)^2)) +
+    sqrt(sum(((brushing.fingerprint$Mean-d$Mean)/brushing.fingerprint$Mean)^2)) +
+    sqrt(sum(((brushing.fingerprint$X3rd.Qu.-d$Qu2)/brushing.fingerprint$X3rd.Qu.)^2)) +
+    sqrt(sum(((brushing.fingerprint$mean.dir5[4]-max(d$per.vec.dir5[4], 0, na.rm = T))/brushing.fingerprint$mean.dir5[4])^2)) +
+    sqrt(sum(((brushing.fingerprint$peaks.per.sec - d$peaks.per.sec)/brushing.fingerprint$peaks.per.sec)^2)) +
+    sqrt(sum(((brushing.fingerprint$avg.period - d$avg.period)/brushing.fingerprint$avg.period)^2)) +
+    sqrt(sum(((brushing.fingerprint$sd.period - d$sd.period)/brushing.fingerprint$sd.period)^2)) 
   )
 }
 
@@ -259,11 +264,11 @@ stopCluster(cl)
 
 sim.results <- data.frame(times = times, sim = sim.results)
 
-sim.results$time <- as.POSIXct(sim.results$time, 
-                               origin="1970-01-01")
 head(sim.results)
 
-sim.results$event <- ifelse(sim.results$sim < 0.35, 1, 0) 
+summary(sim.results)
+
+sim.results$event <- ifelse(sim.results$sim < 2, 1, 0) 
 
 counter <- 0
 for (i in 2:length(sim.results$event)) {
@@ -273,23 +278,23 @@ for (i in 2:length(sim.results$event)) {
 
 message(paste(counter, " events of brushing teeth have been identified"))
 
-test.results <- left_join(test %>% mutate(ts = floor_date(Timestamp, "minute")), 
-                          sim.results %>% mutate(sim = as.factor(ifelse(sim <3, 1, 0))), 
-                          by = c("ts" = "time"))
+test.results <- left_join(test, 
+                          sim.results, 
+                          by = c("time_minute" = "times"))
 
 test.results <- left_join(test.results, select(sim.results, time, event), by = c("ts" = "time"))
 
 plot.similarity <- function(d){
-  d <- filter(d, sim == 1)
-  p0 <- ggplot(d, aes(Timestamp, sim, group = event.y)) + geom_point(col = "red", size = 2) 
-  p1 <- ggplot(d, aes(Timestamp, vector.mag, group = event.y)) + geom_point(aes(col = vector.dir)) + 
-    geom_line() + theme(legend.position="none") + labs(ti0.1034408tle = "Overall Vector Mag")
-  p <- ggplot(d, aes(Timestamp, as.numeric(as.character(vector.dir)), group = event.y)) + geom_line() + labs(title = "Vector Dir")
-  p2 <- ggplot(d, aes(Timestamp, AccelerometerX, group = event.y)) + geom_line() + labs(title = "x Accel")
-  p3 <- ggplot(d, aes(Timestamp, AccelerometerY, group = event.y)) + geom_line() + labs(title = "Y Accel")
-  p4 <- ggplot(d, aes(Timestamp, AccelerometerZ, group = event.y)) + geom_line() + labs(title = "Z Accel")
+  d <- filter(d, event > 0)
+  p0 <- ggplot(d, aes(Timestamp, as.factor(ifelse(sim<2,1,0)), group = event)) + geom_point(col = "red", size = 2) + labs(y="")
+  p1 <- ggplot(d, aes(Timestamp, vector.mag, group = event)) + geom_point(aes(col = vector.dir)) + 
+    geom_line() + theme(legend.position="none") + labs(title = "Overall Vector Mag")
+  p2 <- ggplot(d, aes(Timestamp, as.numeric(as.character(vector.dir)), group = event)) + geom_line() + labs(title = "Vector Dir")
+  p3 <- ggplot(d, aes(Timestamp, AccelerometerX, group = event)) + geom_line() + labs(title = "x Accel")
+  p4 <- ggplot(d, aes(Timestamp, AccelerometerY, group = event)) + geom_line() + labs(title = "Y Accel")
+  p5 <- ggplot(d, aes(Timestamp, AccelerometerZ, group = event)) + geom_line() + labs(title = "Z Accel")
   
-  grid.arrange(p0, p1, p, p2, p3, p4, ncol = 1)
+  grid.arrange(p0, p1, p2, p3, p4, p5, ncol = 1)
 }
 
 plot.similarity(test.results)
