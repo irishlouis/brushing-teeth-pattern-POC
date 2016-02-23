@@ -286,18 +286,32 @@ test.results <- left_join(test.results, select(sim.results, time, event), by = c
 
 plot.similarity <- function(d){
   d <- filter(d, event > 0)
-  p0 <- ggplot(d, aes(Timestamp, as.factor(ifelse(sim<2,1,0)), group = event)) + geom_point(col = "red", size = 2) + labs(y="")
+  p0 <- ggplot(d, aes(Timestamp, as.factor(ifelse(sim<2,1,0)), group = event)) + 
+    geom_point(col = "red", size = 2) + 
+    labs(y="") + 
+    scale_x_datetime(limits = c(ymd_hms("20160120 155000"), ymd_hms("20160120 220000"))) 
+    
   p1 <- ggplot(d, aes(Timestamp, vector.mag, group = event)) + geom_point(aes(col = vector.dir)) + 
-    geom_line() + theme(legend.position="none") + labs(title = "Overall Vector Mag")
-  p2 <- ggplot(d, aes(Timestamp, as.numeric(as.character(vector.dir)), group = event)) + geom_line() + labs(title = "Vector Dir")
-  p3 <- ggplot(d, aes(Timestamp, AccelerometerX, group = event)) + geom_line() + labs(title = "x Accel")
-  p4 <- ggplot(d, aes(Timestamp, AccelerometerY, group = event)) + geom_line() + labs(title = "Y Accel")
-  p5 <- ggplot(d, aes(Timestamp, AccelerometerZ, group = event)) + geom_line() + labs(title = "Z Accel")
+    geom_line() + theme(legend.position="none") + labs(title = "Overall Vector Mag") + 
+    scale_x_datetime(limits = c(ymd_hms("20160120 155000"), ymd_hms("20160120 220000")))
+  p2 <- ggplot(d, aes(Timestamp, as.numeric(as.character(vector.dir)), group = event)) + 
+    geom_line() + labs(title = "Vector Dir") + 
+    scale_x_datetime(limits = c(ymd_hms("20160120 155000"), ymd_hms("20160120 220000")))
+  p3 <- ggplot(d, aes(Timestamp, AccelerometerX, group = event)) + geom_line() + 
+    labs(title = "x Accel") + 
+    scale_x_datetime(limits = c(ymd_hms("20160120 155000"), ymd_hms("20160120 220000")))
+  p4 <- ggplot(d, aes(Timestamp, AccelerometerY, group = event)) + geom_line() + 
+    labs(title = "Y Accel") + 
+    scale_x_datetime(limits = c(ymd_hms("20160120 155000"), ymd_hms("20160120 220000")))
+  p5 <- ggplot(d, aes(Timestamp, AccelerometerZ, group = event)) + geom_line() + 
+    labs(title = "Z Accel") + 
+    scale_x_datetime(limits = c(ymd_hms("20160120 155000"), ymd_hms("20160120 220000")))
   
   grid.arrange(p0, p1, p2, p3, p4, p5, ncol = 1)
 }
 
 plot.similarity(test.results)
+
 
 
 
@@ -364,3 +378,17 @@ cbind(cluster = k.cluster$cluster, Timestamp = as.character(test.summary.wide$Ti
 cbind(cluster = k.cluster$cluster, Timestamp = as.character(test.summary.wide$Timestamp)) %>% 
   data.frame %>% filter(cluster == 21)
 
+#################
+# looking at vector mag rate of change
+
+tmp.rate <- data.frame(vector.rate = rollapply(test$vector.mag, 2, function(x) (x[2] - x[1])/.01),
+                       time = 1:(length(test$vector.mag)-1),
+                       event = test.results$event[-1]) 
+
+ggplot(tmp.rate %>% filter(event > 0), 
+       aes(time, vector.rate)) + 
+  geom_point(aes(col = as.factor(event)))
+
+ggplot(tmp.rate, 
+       aes(time, vector.rate)) + 
+  geom_point(aes(col = as.factor(event)))
