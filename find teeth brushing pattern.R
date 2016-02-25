@@ -136,6 +136,8 @@ brushing.fingerprint <- cbind(t(brushing.fingerprint),
                               sd.dir5 = c(0,0,0, sd(sapply(brushing.summary.dir, function(x) x[5]))))
 brushing.fingerprint
 
+save(brushing.fingerprint, file = "brushing.fingerprint.RDA" )
+
 brushing.fingerprint.sd  <- cbind(t(brushing.fingerprint.sd), 
                                sd.dir5 = c(0,0,0, sd(sapply(brushing.summary.dir, function(x) x[5]))))
 brushing.fingerprint.sd
@@ -213,7 +215,6 @@ times <- unique(test$time_minute)
 require(doParallel)
 
 tmp.func <- function(t){
-  print(t)
   tbl <- test %>% filter(time_minute == t) %>% 
     select(-Timestamp, -vector.dir, -time_minute) %>% 
     apply(.,2, get.peak.summary) %>% t() %>% data.frame %>% mutate(Timestamp = t) 
@@ -226,6 +227,7 @@ tmp.func <- function(t){
                       Timestamp  = rep(t,4)))
   }
 }
+
 
 tmp <- do.call(rbind, lapply(times, tmp.func ))
 
@@ -281,8 +283,6 @@ message(paste(counter, " events of brushing teeth have been identified"))
 test.results <- left_join(test, 
                           sim.results, 
                           by = c("time_minute" = "times"))
-
-test.results <- left_join(test.results, select(sim.results, time, event), by = c("ts" = "time"))
 
 plot.similarity <- function(d){
   d <- filter(d, event > 0)
