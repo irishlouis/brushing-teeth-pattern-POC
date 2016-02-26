@@ -16,6 +16,7 @@ require(zoo)
 require(reshape2)
 require(doParallel)
 require(data.table)
+require(caret)
 
 org.df <- fread("TAS1E35150309 (2016-01-21)RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
 # marie's data
@@ -292,22 +293,69 @@ new.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% dist
 ggplot(test.df %>% filter(Timestamp > ymd_hms("20160225 171835"),
                           Timestamp < ymd_hms("20160225 172200")),
        aes(Timestamp, vector.mag)) + geom_line()
+test.result %>% filter(Timestamp >= ymd_hms("20160225 171800"),
+                       Timestamp <= ymd_hms("20160225 172200")) %>%
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
 
 ggplot(test.df %>% filter(Timestamp > ymd_hms("20160225 230115"),
                           Timestamp < ymd_hms("20160225 230500")),
        aes(Timestamp, vector.mag)) + geom_line()
+test.result %>% filter(Timestamp >= ymd_hms("20160225 230100"),
+                       Timestamp <= ymd_hms("20160225 230500")) %>%
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
 
 ggplot(test.df %>% filter(Timestamp > ymd_hms("20160226 072930"),
                           Timestamp < ymd_hms("20160226 073230")),
        aes(Timestamp, vector.mag)) + geom_line()
+test.result %>% filter(Timestamp >= ymd_hms("20160226 072900"),
+                       Timestamp <= ymd_hms("20160226 073300")) %>%
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
 
+test.minutes <- c(ymd_hms("20160225 171900"), ymd_hms("20160225 172000"), ymd_hms("20160225 172100"),
+                  ymd_hms("20160225 230100"), ymd_hms("20160225 230200"), ymd_hms("20160225 230300"),ymd_hms("20160225 230400"),
+                  ymd_hms("20160226 072900"), ymd_hms("20160226 073000"), ymd_hms("20160226 073100"), ymd_hms("20160226 073200"))
+
+confusionMatrix(ifelse(unique(test.result$time_minute) %in% test.minutes, 1, 0),
+ifelse(unlist(test.result %>% select(time_minute, event) %>% distinct() %>% select(event)) > 0, 1, 0)
+)
 
 # louis plots
 ggplot(test.new %>% filter(Timestamp > ymd_hms("20160225 214200"),
                           Timestamp < ymd_hms("20160225 214500")),
        aes(Timestamp, vector.mag)) + geom_line()
+test.result %>% filter(Timestamp >= ymd_hms("20160225 214200"),
+                       Timestamp <= ymd_hms("20160225 214500")) %>%
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
 
 ggplot(test.new %>% filter(Timestamp > ymd_hms("20160226 080800"),
                           Timestamp < ymd_hms("20160226 081100")),
        aes(Timestamp, vector.mag)) + geom_line()
+test.result %>% filter(Timestamp >= ymd_hms("20160226 080800"),
+                       Timestamp <= ymd_hms("20160226 081100")) %>%
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
+
+test.result %>% filter(event.e ==1) %>% 
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
+
+test.result %>% filter(event.b ==1) %>% 
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
+
+test.result %>% filter(event ==1) %>% 
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
+
+new.minutes <- c(ymd_hms("20160225 214200"), ymd_hms("20160225 214300"), ymd_hms("20160225 214400"),
+                  ymd_hms("20160226 080800"), ymd_hms("20160226 080900"), ymd_hms("20160226 081000"))
+
+confusionMatrix(ifelse(unique(new.result$time_minute) %in% new.minutes, 1, 0),
+                ifelse(unlist(new.result %>% select(time_minute, event) %>% distinct() %>% select(event)) > 0, 1, 0)
+)
+
 
