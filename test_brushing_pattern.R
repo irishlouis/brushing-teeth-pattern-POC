@@ -1,6 +1,11 @@
 setwd("U:/Actigraphy Raw Data (Marie McCarthy)/brushing teeth")
 
 load("brushing.fingerprint.RDA")
+load("brushing.fingerprint.sd.RDA")
+
+# calculation of fingerprint didn't consider freq of device
+brushing.fingerprint$avg.period <- brushing.fingerprint$avg.period / 100
+brushing.fingerprint$sd.period <- brushing.fingerprint$sd.period / 100
 
 require(stringr)
 require(lubridate)
@@ -14,9 +19,9 @@ require(data.table)
 
 org.df <- fread("TAS1E35150309 (2016-01-21)RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
 # marie's data
-test.df <- fread("./test_data/TAS1E31150005_2016-02-25___09-40-14RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
+test.df <- fread("c:/users/smithlou/desktop/TAS1E31150005 (2016-02-26)RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
 # louis data
-test.new <- fread("./test_data/TAS1E31150003_2016-02-25___09-42-28RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
+test.new <- fread("c:/users/smithlou/desktop/TAS1E31150003 (2016-02-26)RAW.csv", stringsAsFactors = F, skip = 10, header = T, data.table = F)
 
 #' format.df
 #'
@@ -139,29 +144,56 @@ summary.df <- function(df, freq, k=10){
   return(test.summary)
 }
 
-org.df.summary   <- summary.df(org.df, freq = 100, k=10)    # org data used to generate fingerprint
-test.df.summary  <- summary.df(df = test.df, freq = 30, k=3)    # marie
-test.new.summary <- summary.df(test.new, freq = 30, k=3)   # louis
+org.df.summary   <- summary.df(org.df, freq = 100, k=10)          # org data used to generate fingerprint
+test.df.summary  <- summary.df(df = test.df, freq = 100, k=10)    # marie
+test.new.summary <- summary.df(test.new, freq = 100, k=10)        # louis
+
+
+
 
 #' similarity
 #'
 #' @param brushing.fingerprint 
+#' @param d a one minute summary of actigraphy data for comparision with the fingerprint
+#'
+#' @return a measure of similarity - euclidean distance from fingerprint
+#' 
+similarity.euclidean <- function(brushing.fingerprint, d){
+  return(
+      # sqrt(sum(((brushing.fingerprint$Qu1st-d$Qu1)/brushing.fingerprint$Qu1st)^2)) +
+      sqrt(sum(((brushing.fingerprint$Median-d$Median)/brushing.fingerprint$Median)^2)) +
+      sqrt(sum(((brushing.fingerprint$Mean-d$Mean)/brushing.fingerprint$Mean)^2)) +
+      # sqrt(sum(((brushing.fingerprint$Qu3rd-d$Qu2)/brushing.fingerprint$Qu3rd)^2)) +
+      # sqrt(sum(((brushing.fingerprint$mean.dir5[4]-max(d$per.vec.dir5[4], 0, na.rm = T))/brushing.fingerprint$mean.dir5[4])^2)) +
+      sqrt(sum(((brushing.fingerprint$avg.period - d$avg.period)/brushing.fingerprint$avg.period)^2)) +
+      # sqrt(sum(((brushing.fingerprint$sd.period - d$sd.period)/brushing.fingerprint$sd.period)^2)) +
+      sqrt(sum(((brushing.fingerprint$peaks.per.sec - d$peaks.per.sec)/brushing.fingerprint$peaks.per.sec)^2))
+  )
+}
+
+#' similarity.boolean
+#'
+#' @param brushing.fingerprint 
+#' @param brushing.fingerprint.sd 
+#' @param sigma 
 #' @param d 
 #'
 #' @return
-#' @export
 #' 
-similarity <- function(brushing.fingerprint, d){
-  return(
-    sqrt(sum(((brushing.fingerprint$Qu1st-d$Qu1)/brushing.fingerprint$Qu1st)^2)) +
-      sqrt(sum(((brushing.fingerprint$Median-d$Median)/brushing.fingerprint$Median)^2)) +
-      sqrt(sum(((brushing.fingerprint$Mean-d$Mean)/brushing.fingerprint$Mean)^2)) +
-      sqrt(sum(((brushing.fingerprint$Qu3rd-d$Qu2)/brushing.fingerprint$Qu3rd)^2)) +
-      # sqrt(sum(((brushing.fingerprint$mean.dir5[4]-max(d$per.vec.dir5[4], 0, na.rm = T))/brushing.fingerprint$mean.dir5[4])^2)) +
-      sqrt(sum(((brushing.fingerprint$avg.period - d$avg.period)/brushing.fingerprint$avg.period)^2)) +
-      sqrt(sum(((brushing.fingerprint$sd.period - d$sd.period)/brushing.fingerprint$sd.period)^2)) +
-      sqrt(sum(((brushing.fingerprint$peaks.per.sec - d$peaks.per.sec)/brushing.fingerprint$peaks.per.sec)^2))
-  )
+similarity.boolean <- function(brushing.fingerprint, brushing.fingerprint.sd, sigma = 1, d){
+  tmp <- brushing.fingerprint$Mean + (sigma * brushing.fingerprint.sd$Mean * c(-1,1))
+  close.mean <- d$Mean >= tmp[1] & d$Mean <= tmp[2]
+  tmp <- brushing.fingerprint$Median + (sigma * brushing.fingerprint.sd$Median * c(-1,1))
+  close.median <- d$Median >= tmp[1] & d$Median <= tmp[2]
+  # don't have sd for peaks per second of teeth brushing events
+  tmp <- brushing.fingerprint$peaks.per.sec + 
+    (sigma * brushing.fingerprint.sd$peak.per.sec.sd * c(-1,1))
+  close.peak.rate <- d$peaks.per.sec >= tmp[1] & d$peaks.per.sec <= tmp[2]
+  
+  tmp <- brushing.fingerprint$avg.period + (sigma * brushing.fingerprint$sd.period * c(-1,1))
+  close.peak.period <- d$avg.period >= tmp[1] & d$avg.period <= tmp[2]
+  
+  return(c(close.mean, close.median, close.peak.rate, close.peak.period))
 }
 
 #' get.sim.results
@@ -174,19 +206,41 @@ similarity <- function(brushing.fingerprint, d){
 #'
 #' @return
 #' 
-get.sim.results <- function(raw.df, summary.df, brushing.fingerprint, similarity, close = 2){
-  cores <- detectCores()
-  cl <- makeCluster(cores)
-  registerDoParallel(cl)
-  times <- unique(summary.df$Timestamp)
+get.sim.results <- function(raw.df, summary.df, 
+                            brushing.fingerprint,
+                            brushing.fingerprint.sd,
+                            similarity.euclidean.m = similarity.euclidean, 
+                            similarity.boolean.m = similarity.boolean,
+                            sigma = 1,
+                            close = 2){
+    cores <- detectCores()
+    cl <- makeCluster(cores)
+    registerDoParallel(cl)
+    times <- unique(summary.df$Timestamp)
+    sim.results.e <- foreach(t = seq_along(times), .combine = c) %dopar% {
+      return(sim = similarity.euclidean.m(as.data.frame(brushing.fingerprint)[4,], 
+                                        summary.df[summary.df$Timestamp == times[t], ][4,]))
+    }
+    sim.results.b <- foreach(t = seq_along(times), .combine = rbind) %dopar% {
+      return(sim = similarity.boolean.m(brushing.fingerprint = as.data.frame(brushing.fingerprint)[4,], 
+                                      brushing.fingerprint.sd = as.data.frame(brushing.fingerprint.sd)[4,], 
+                                      sigma = sigma, 
+                                      d = summary.df[summary.df$Timestamp == times[t], ][4,]))
+    }
+    stopCluster(cl)
   
-  sim.results <- foreach(t = seq_along(times), .combine = c) %dopar% {
-    return(sim = similarity(as.data.frame(brushing.fingerprint)[4,], summary.df[summary.df$Timestamp == times[t], ][4,]))
-  }
-  stopCluster(cl)
-
-  sim.results <- data.frame(times = times, sim = sim.results)
-  sim.results$event <- ifelse(sim.results$sim < close, 1, 0) 
+    sim.results <- data.frame(times = times, sim.e = sim.results.e, sim.b = sim.results.b)
+    
+    sim.results$event.e <- ifelse(sim.results$sim.e < close, 1, 0)
+    sim.results$event.b <- ifelse(sim.results %>% select(sim.b.1:sim.b.4) %>% apply(., 1, sum) == 4, 1, 0)
+ 
+    sim.results %>% filter(event.e == 1 )
+    sim.results %>% filter(event.b == 1)
+    sim.results %>% filter(event.e == 1 & event.b == 1)
+    
+    sim.results$event <- ifelse(sim.results$event.e == 1 &
+                                  sim.results$event.b == 1, 
+                                1,0)
 
   counter <- 0
   for (i in 2:length(sim.results$event)) {
@@ -202,89 +256,58 @@ get.sim.results <- function(raw.df, summary.df, brushing.fingerprint, similarity
   return(result)
 }
 
+
+
+
 # save.image("test_brushing_pattern.RDATA")
 
-org.result <- get.sim.results(raw.df = org.df, close = 0.5, 
-                               summary.df = org.df.summary, 
-                               brushing.fingerprint, 
-                               similarity)
-org.result %>% select(time_minute, sim,  event) %>% filter(event > 0) %>% distinct()
+org.result <- get.sim.results(raw.df = org.df,summary.df = org.df.summary, 
+                              brushing.fingerprint = brushing.fingerprint, 
+                              brushing.fingerprint.sd = brushing.fingerprint.sd, 
+                              sigma = 3.5, close = 0.11)
+org.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% distinct()
 
-test.result <- get.sim.results(raw.df = test.df,
-                               close = 0.5,
-                               summary.df = test.df.summary, 
-                               brushing.fingerprint, 
-                               similarity)
-test.result %>% select(time_minute, sim,  event) %>% filter(event > 0) %>% distinct()
-
-test.result %>% filter(Timestamp == ymd_hms("20160224 213900")) %>%
-  select(time_minute, sim, event)  %>% distinct()
-
-test.df.summary %>% filter(Timestamp == ymd_hms("20160224 213900"))
-
-ggplot(test.df %>% filter(Timestamp > ymd_hms("20160224 213900"), Timestamp <= ymd_hms("20160224 213901")),
-       aes(x = 1:30)) + geom_line(aes(y = vector.mag), col = "blue") 
+# 100% on training dataset
 
 
-new.result <- get.sim.results(raw.df = test.new, close = .5,
-                              summary.df = test.new.summary, 
-                              brushing.fingerprint, 
-                              similarity)
+test.result <- get.sim.results(raw.df = test.df, summary.df = test.df.summary, 
+                               brushing.fingerprint = brushing.fingerprint, 
+                               brushing.fingerprint.sd = brushing.fingerprint.sd, 
+                               sigma = 3.5, close = 0.11)
+test.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% distinct()
 
-new.result %>% select(time_minute, sim,  event) %>% filter(event > 0) %>% distinct()
+# 66% and 6 FP's
 
-new.result %>% filter(Timestamp > ymd_hms("20160225 072500"), Timestamp < ymd_hms("20160225 072700")) %>%
-  select(time_minute, sim, event)  %>% distinct()
-
-ggplot(test.new %>% filter(Timestamp > ymd_hms("20160224 213900"), Timestamp < ymd_hms("20160224 214000")),
-       aes(x= Timestamp)) + geom_line(aes(y=vector.mag), col= "red")
-
-test.new.summary %>% filter(Timestamp == ymd_hms("20160224 213900"))
-
+new.result <- get.sim.results(raw.df = test.new, summary.df = test.new.summary, 
+                              brushing.fingerprint = brushing.fingerprint, 
+                              brushing.fingerprint.sd = brushing.fingerprint.sd, 
+                              sigma = 3.5, close = 0.11)
+new.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% distinct()
 
 
-#' Title
-#'
-#' @param d 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-plot.similarity <- function(df, scale.time = F){
-  d <- filter(df, event > 0)
-  
-  if(scale.time){
-    start = min(df$time_minute)
-    end = max(df$time_minute)
-  } else {
-    start = min(d$time_minute)
-    end = max(d$time_minute)
-  }
-  
-  p0 <- ggplot(d, aes(Timestamp, as.factor(ifelse(sim<2,1,0)), group = event)) + 
-    geom_point(col = "red", size = 2) + 
-    labs(y="") + 
-    scale_x_datetime(limits = c(start, end)) 
-  p1 <- ggplot(d, aes(Timestamp, vector.mag, group = event)) + geom_point(aes(col = vector.dir)) + 
-    geom_line() + theme(legend.position="none") + labs(title = "Overall Vector Mag") + 
-    scale_x_datetime(limits = c(start, end))
-  p2 <- ggplot(d, aes(Timestamp, as.numeric(as.character(vector.dir)), group = event)) + 
-    geom_line() + labs(title = "Vector Dir") + 
-    scale_x_datetime(limits = c(start, end))
-  p3 <- ggplot(d, aes(Timestamp, AccelerometerX, group = event)) + geom_line() + 
-    labs(title = "x Accel") + 
-    scale_x_datetime(limits = c(start, end))
-  p4 <- ggplot(d, aes(Timestamp, AccelerometerY, group = event)) + geom_line() + 
-    labs(title = "Y Accel") + 
-    scale_x_datetime(limits = c(start, end))
-  p5 <- ggplot(d, aes(Timestamp, AccelerometerZ, group = event)) + geom_line() + 
-    labs(title = "Z Accel") + 
-    scale_x_datetime(limits = c(start, end))
-  
-  grid.arrange(p0, p1, p2, p3, p4, p5, ncol = 1)
-}
+###################################
+#
+# missing times in marie & louis data
 
-plot.similarity(test.df, scale.time = T)
+ggplot(test.df %>% filter(Timestamp > ymd_hms("20160225 171835"),
+                          Timestamp < ymd_hms("20160225 172200")),
+       aes(Timestamp, vector.mag)) + geom_line()
 
+ggplot(test.df %>% filter(Timestamp > ymd_hms("20160225 230115"),
+                          Timestamp < ymd_hms("20160225 230500")),
+       aes(Timestamp, vector.mag)) + geom_line()
+
+ggplot(test.df %>% filter(Timestamp > ymd_hms("20160226 072930"),
+                          Timestamp < ymd_hms("20160226 073230")),
+       aes(Timestamp, vector.mag)) + geom_line()
+
+
+# louis plots
+ggplot(test.new %>% filter(Timestamp > ymd_hms("20160225 214200"),
+                          Timestamp < ymd_hms("20160225 214500")),
+       aes(Timestamp, vector.mag)) + geom_line()
+
+ggplot(test.new %>% filter(Timestamp > ymd_hms("20160226 080800"),
+                          Timestamp < ymd_hms("20160226 081100")),
+       aes(Timestamp, vector.mag)) + geom_line()
 

@@ -1,5 +1,15 @@
 setwd("U:/Actigraphy Raw Data (Marie McCarthy)/brushing teeth")
 
+#################################################################
+require(stringr)
+require(lubridate)
+require(dplyr)
+require(ggplot2)
+require(gridExtra)
+require(zoo)
+require(reshape2)
+require(doParallel)
+require(data.table)
 load("brushing summary data.RDATA")
 
 #################################################################
@@ -140,7 +150,10 @@ save(brushing.fingerprint, file = "brushing.fingerprint.RDA" )
 
 brushing.fingerprint.sd  <- cbind(t(brushing.fingerprint.sd), 
                                sd.dir5 = c(0,0,0, sd(sapply(brushing.summary.dir, function(x) x[5]))))
+
 brushing.fingerprint.sd
+
+save(brushing.fingerprint.sd, file = "brushing.fingerprint.sd.RDA" )
 
 # sin wave fingerprint pattern
 get.peak.summary <- function(v, k = 10) {
@@ -179,8 +192,10 @@ peak.summary
 peak.summary.averages <- Reduce('+', peak.summary) / length(peak.summary)
 peak.summary.averages
 
-brushing.fingerprint <- cbind(brushing.fingerprint, peak.summary.averages)
+peak.per.sec.sd <- sd(c(peak.summary[[1]][4,1], peak.summary[[2]][4,1], peak.summary[[3]][4,1], peak.summary[[4]][4,1]))
 
+brushing.fingerprint <- cbind(brushing.fingerprint, peak.summary.averages)
+brushing.fingerprint.sd <-cbind(brushing.fingerprint.sd, peak.per.sec.sd = peak.per.sec.sd)
 save.image(file = "brushing summary data.RDATA")
 
 ########################################################
@@ -410,3 +425,100 @@ ggplot(tmp.rate %>% filter(event > 0),
 ggplot(tmp.rate, 
        aes(time, vector.rate)) + 
   geom_point(aes(col = as.factor(event)))
+
+
+
+#######################################
+# 
+# what are most important parts of fingerprint?
+brushing.fingerprint
+brushing.fingerprint.sd
+
+# peaks per second
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = peaks.per.sec)) + 
+                                        geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                                                                  as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                                                                  as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                                                                  as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+                                                                  ), col = "red") +
+  geom_hline(yintercept = 9.3, col = "blue") +
+  labs(title = "peaks per sec")
+
+# avg.period 
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = avg.period)) + 
+  geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+  ), col = "red") +
+  geom_hline(yintercept = 10.8, col = "blue") +
+  labs(title = "avg period")
+
+# sd.period
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = sd.period)) + 
+  geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+  ), col = "red") +
+  geom_hline(yintercept = 4.5, col = "blue")
+
+# mean
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = Mean)) + 
+  geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+  ), col = "red") +
+  geom_hline(yintercept = 1.068, col = "blue")+
+  labs(title = "mean")
+
+# median
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = Median)) + 
+  geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+  ), col = "red") +
+  geom_hline(yintercept = 1.03, col = "blue") +
+  labs(title = "median")
+
+
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = Qu1)) + 
+  geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+  ), col = "red") +
+  geom_hline(yintercept = .82, col = "blue") +
+  labs(title = "1stQ")
+
+ggplot(test.summary %>% filter(variable == "vector.mag",
+                               Timestamp > dmy_hms("20/01/2016 170000", tz = "GMT"),
+                               Timestamp < dmy_hms("20/01/2016 220000", tz = "GMT")), 
+       aes(x =Timestamp)) + geom_line(aes(y = Qu2)) + 
+  geom_vline(xintercept = c(as.numeric(dmy_hms("20/01/2016 170200", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 180700", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 182900", tz = "GMT")),
+                            as.numeric(dmy_hms("20/01/2016 215600", tz = "GMT"))
+  ), col = "red") +
+  geom_hline(yintercept = 1.28, col = "blue") +
+  labs(title = "3rdQ")
