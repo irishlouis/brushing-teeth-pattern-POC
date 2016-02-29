@@ -165,12 +165,12 @@ similarity.euclidean <- function(brushing.fingerprint, d){
   return(
     # sqrt(sum(((brushing.fingerprint$Qu1st-d$Qu1)/brushing.fingerprint$Qu1st)^2)) +
     sqrt(sum(((brushing.fingerprint$Median-d$Median)/brushing.fingerprint$Median)^2)) +
-      sqrt(sum(((brushing.fingerprint$Mean-d$Mean)/brushing.fingerprint$Mean)^2)) +
-      # sqrt(sum(((brushing.fingerprint$Qu3rd-d$Qu2)/brushing.fingerprint$Qu3rd)^2)) +
-      # sqrt(sum(((brushing.fingerprint$mean.dir5[4]-max(d$per.vec.dir5[4], 0, na.rm = T))/brushing.fingerprint$mean.dir5[4])^2)) +
-      sqrt(sum(((brushing.fingerprint$avg.period - d$avg.period)/brushing.fingerprint$avg.period)^2)) +
-      # sqrt(sum(((brushing.fingerprint$sd.period - d$sd.period)/brushing.fingerprint$sd.period)^2)) +
-      sqrt(sum(((brushing.fingerprint$peaks.per.sec - d$peaks.per.sec)/brushing.fingerprint$peaks.per.sec)^2))
+    sqrt(sum(((brushing.fingerprint$Mean-d$Mean)/brushing.fingerprint$Mean)^2)) +
+    # sqrt(sum(((brushing.fingerprint$Qu3rd-d$Qu2)/brushing.fingerprint$Qu3rd)^2)) +
+    # sqrt(sum(((brushing.fingerprint$mean.dir5[4]-max(d$per.vec.dir5[4], 0, na.rm = T))/brushing.fingerprint$mean.dir5[4])^2)) +
+    sqrt(sum(((brushing.fingerprint$avg.period - d$avg.period)/brushing.fingerprint$avg.period)^2)) +
+    # sqrt(sum(((brushing.fingerprint$sd.period - d$sd.period)/brushing.fingerprint$sd.period)^2)) +
+    sqrt(sum(((brushing.fingerprint$peaks.per.sec - d$peaks.per.sec)/brushing.fingerprint$peaks.per.sec)^2))
   )
 }
 
@@ -267,8 +267,27 @@ get.sim.results <- function(raw.df, summary.df,
 org.result <- get.sim.results(raw.df = org.df,summary.df = org.df.summary, 
                               brushing.fingerprint = brushing.fingerprint, 
                               brushing.fingerprint.sd = brushing.fingerprint.sd, 
-                              sigma = 2, close = 0.1)
+                              sigma = 3, close = 0.085)
+
 org.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% distinct()
+
+org.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% 
+  mutate(time_minute = floor_date(time_minute, "minute")) %>% 
+  group_by(time_minute) %>%
+  summarise(n = n() / 1500, max = max(sim.e), min = min(sim.e)) %>% data.frame
+
+
+ggplot(org.df %>% filter(Timestamp > ymd_hms("20160120 170115"),
+                           Timestamp < ymd_hms("20160120 170445")),
+       aes(Timestamp, vector.mag)) + geom_line()
+
+org.result %>% filter(Timestamp >= ymd_hms("20160120 170115"),
+                       Timestamp <= ymd_hms("20160120 170445")) %>%
+  select(time_minute, sim.e, sim.b.1, sim.b.2, sim.b.3, sim.b.4, event.e, event.b,  event) %>%
+  distinct
+
+
+
 
 # 100% on training dataset
 
@@ -276,7 +295,7 @@ org.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% dist
 test.result <- get.sim.results(raw.df = test.df, summary.df = test.df.summary, 
                                brushing.fingerprint = brushing.fingerprint, 
                                brushing.fingerprint.sd = brushing.fingerprint.sd, 
-                               sigma = 2, close = 0.075)
+                               sigma = 3, close = 0.085)
 test.result %>% select(time_minute, sim.e,  event) %>% filter(event > 0) %>% distinct()
 
 # 66% and 6 FP's
